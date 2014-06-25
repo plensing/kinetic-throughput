@@ -3,9 +3,6 @@ project(throughput CXX C)
 
 set(CMAKE_CXX_FLAGS "-g --std=c++11 -Wall -Wextra -Werror -Wno-unknown-warning-option -Wno-unused-parameter -Wno-unused-local-typedefs -Wno-null-dereference -DGTEST_USE_OWN_TR1_TUPLE=1 -D__STDC_FORMAT_MACROS")
 
-
-
-
 if(EXISTS "$ENV{HOME}/git/kinetic-cpp-client/")
    set(KINETIC_CLIENT_PATH "$ENV{HOME}/git/kinetic-cpp-client/")
    message("Found existing kinetic-cpp-client at ${KINETIC_CLIENT_PATH}")
@@ -14,22 +11,18 @@ else()
 endif()
 
 include_directories(
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/vendor/include
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/include
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/vendor/src/gmock/fused-src
+    ${KINETIC_CLIENT_PATH}/vendor/include
     ${KINETIC_CLIENT_PATH}/src/main/generated
-    ${KINETIC_CLIENT_PATH}/src/main
     ${KINETIC_CLIENT_PATH}/include
 )
 
 set(LIBRARY_DEPENDENCIES
     ${KINETIC_CLIENT_PATH}/libkinetic_client.a
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/libprotobufutil.a
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/vendor/lib/libglog.a
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/vendor/lib/libgflags.a
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/vendor/lib/libssl.a
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/vendor/lib/libcrypto.a
-    ${KINETIC_CLIENT_PATH}/vendor/src/protobufutil/vendor/lib/libprotobuf.a
+    ${KINETIC_CLIENT_PATH}/vendor/lib/libglog.a
+    ${KINETIC_CLIENT_PATH}/vendor/lib/libgflags.a
+    ${KINETIC_CLIENT_PATH}/vendor/lib/libssl.a
+    ${KINETIC_CLIENT_PATH}/vendor/lib/libcrypto.a
+    ${KINETIC_CLIENT_PATH}/vendor/lib/libprotobuf.a
     ${CMAKE_THREAD_LIBS_INIT}
     dl
 )
