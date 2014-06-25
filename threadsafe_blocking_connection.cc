@@ -148,6 +148,7 @@ KineticStatus ThreadsafeBlockingConnection::Get(const string& key, unique_ptr<Ki
     return callback->getResult();
 }
 
+
 KineticStatus ThreadsafeBlockingConnection::Put(const string& key, const string& current_version, WriteMode mode, const KineticRecord& record)
 {
     auto callback = make_shared<SimpleCallback>();
@@ -156,6 +157,17 @@ KineticStatus ThreadsafeBlockingConnection::Put(const string& key, const string&
     good_morning();
     return callback->getResult();
 }
+
+KineticStatus ThreadsafeBlockingConnection::Put(const string& key, const string& current_version, WriteMode mode, const KineticRecord& record, PersistMode persistMode)
+{
+    auto callback = make_shared<SimpleCallback>();
+    nonblocking_connection_->Put(key, current_version, mode, make_shared<KineticRecord>(record), callback, persistMode);
+
+    good_morning();
+    return callback->getResult();
+}
+
+
 
 KineticStatus ThreadsafeBlockingConnection::Delete(const string& key, const string& version, WriteMode mode)
 {
