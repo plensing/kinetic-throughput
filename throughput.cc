@@ -74,7 +74,7 @@ int main(int argc, char** argv)
         if(ctype.compare("custom")==0){
             std::shared_ptr<kinetic::NonblockingKineticConnection> nblocking;
             status = factory.NewThreadsafeNonblockingConnection(options, nblocking);
-            if(status.ok())   con.reset(new kinetic::ThreadsafeBlockingConnection(nblocking, 5));
+            if(status.ok()) con.reset(new kinetic::ThreadsafeBlockingConnection(nblocking, 5));
         }
         if (status.notOk())
             printf("Could not initialize connection\n");
@@ -96,11 +96,13 @@ int main(int argc, char** argv)
         std::string key;
         for(int i=0; i<num_keys; i++){
             key = std::to_string(tid) + "_" + std::to_string(i);
-            if(!connection->Put( key, "",
+            kinetic::KineticStatus status = connection->Put( key, "",
                     kinetic::WriteMode::IGNORE_VERSION,
                     kinetic::KineticRecord(value, std::to_string(i), "", Message_Algorithm_SHA1),
-                    persist).ok())
-                printf("ERROR DURING PUT \n");
+                    persist);
+
+            if(!status.ok())
+                printf("ERROR DURING PUT: %s \n",status.message().c_str());
         }
     };
 
