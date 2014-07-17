@@ -237,8 +237,13 @@ void slisten(
 
         /* disable the Nagle buffering algorithm, small puts will otherwise be unduly delayed. */
          if(num_fds){
-             int i = 1;
-             setsockopt( num_fds-1, IPPROTO_TCP, TCP_NODELAY, (void *)&i, sizeof(i));
+             int state = 1;
+             setsockopt( num_fds-1, IPPROTO_TCP, TCP_NODELAY, (void *)&state, sizeof(state));
+
+        #ifndef __APPLE__
+             state=1;
+             setsockopt( num_fds-1, IPPROTO_TCP, TCP_QUICKACK, (void *)&state, sizeof(state));
+        #endif
          }
 
         /* add pipe fd so that we can wake up select from the blocking API. */

@@ -113,7 +113,7 @@ int main(int argc, char** argv)
             key = std::to_string(tid) + "_" + std::to_string(i);
 
             if(config.random_distribution) connectionID = std::hash<std::string>()(key) % connections.size();
-            else connectionID = ++connectionID % connections.size();
+            else connectionID = (connectionID+1) % connections.size();
 
 
             kinetic::KineticStatus status = connections[connectionID]->Put( key, "",
