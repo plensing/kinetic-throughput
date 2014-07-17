@@ -31,6 +31,13 @@ using std::vector;
 /// blocking functionality for multi-threaded scenarios
 class ThreadsafeBlockingConnection : public BlockingKineticConnection {
 
+private:
+    std::shared_ptr<NonblockingKineticConnection> nonblocking_connection_;
+    bool run_listener;
+    int  pipeFD_receive;
+    int  pipeFD_send;
+    KineticStatus invalid;
+
 public:
     KineticStatus NoOp();
     KineticStatus Get(const string &key, unique_ptr<KineticRecord>& record);
@@ -50,14 +57,35 @@ public:
         unsigned int network_timeout_seconds);
     virtual ~ThreadsafeBlockingConnection();
 
+
+    /* Functionality not used by h-flat is left unimplemented. */
+public:
+    KineticStatus Get(const shared_ptr<const string> key, unique_ptr<KineticRecord>& record){return invalid;}
+    KineticStatus GetNext(const shared_ptr<const string> key, unique_ptr<string>& actual_key, unique_ptr<KineticRecord>& record){return invalid;}
+    KineticStatus GetNext(const string& key, unique_ptr<string>& actual_key,  unique_ptr<KineticRecord>& record){return invalid;}
+    KineticStatus GetPrevious(const shared_ptr<const string> key, unique_ptr<string>& actual_key, unique_ptr<KineticRecord>& record){return invalid;}
+    KineticStatus GetPrevious(const string& key, unique_ptr<string>& actual_key, unique_ptr<KineticRecord>& record){return invalid;}
+    KineticStatus GetVersion(const shared_ptr<const string> key, unique_ptr<string>& version){return invalid;}
+    KineticStatus GetKeyRange(const shared_ptr<const string> start_key, bool start_key_inclusive, const shared_ptr<const string> end_key, bool end_key_inclusive, bool reverse_results, int32_t max_results, unique_ptr<vector<string>>& keys){return invalid;}
+    KineticStatus Put(const shared_ptr<const string> key, const shared_ptr<const string> current_version, WriteMode mode, const shared_ptr<const KineticRecord> record, PersistMode persistMode){return invalid;}
+    KineticStatus Put(const shared_ptr<const string> key, const shared_ptr<const string> current_version, WriteMode mode, const shared_ptr<const KineticRecord> record){return invalid;}
+    KineticStatus Delete(const shared_ptr<const string> key, const shared_ptr<const string> version, WriteMode mode, PersistMode persistMode){return invalid;}
+    KineticStatus Delete(const string& key, const string& version, WriteMode mode, PersistMode persistMode){return invalid;}
+    KineticStatus Delete(const shared_ptr<const string> key, const shared_ptr<const string> version, WriteMode mode){return invalid;}
+    KineticStatus InstantSecureErase(const shared_ptr<string> pin){return invalid;}
+    KineticStatus InstantSecureErase(const string& pin){return invalid;}
+    KineticStatus UpdateFirmware(const shared_ptr<const string> new_firmware){return invalid;}
+    KineticStatus SetACLs(const shared_ptr<const list<ACL>> acls){return invalid;}
+    KineticStatus SetPin(const shared_ptr<const string> new_pin, const shared_ptr<const string> current_pin = make_shared<string>()){return invalid;}
+    KineticStatus SetPin(const string& new_pin, const string& current_pin){return invalid;}
+    KineticStatus P2PPush(const P2PPushRequest& push_request, unique_ptr<vector<KineticStatus>>& operation_statuses){return invalid;}
+    KineticStatus P2PPush(const shared_ptr<const P2PPushRequest> push_request, unique_ptr<vector<KineticStatus>>& operation_statuses){return invalid;}
+    KeyRangeIterator IterateKeyRange(const shared_ptr<const string> start_key, bool start_key_inclusive, const shared_ptr<const string> end_key, bool end_key_inclusive, unsigned int frame_size){KeyRangeIterator k; return k;}
+    KeyRangeIterator IterateKeyRange(const string& start_key, bool start_key_inclusive, const string& end_key, bool end_key_inclusive, unsigned int frame_size){KeyRangeIterator k; return k;}
+
+
     private:
     void good_morning();
-
-    std::shared_ptr<NonblockingKineticConnection> nonblocking_connection_;
-    bool run_listener;
-    int  pipeFD_receive;
-    int  pipeFD_send;
-
     KineticStatus GetKineticStatus(StatusCode code);
     DISALLOW_COPY_AND_ASSIGN(ThreadsafeBlockingConnection);
     };

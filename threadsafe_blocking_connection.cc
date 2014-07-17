@@ -3,6 +3,9 @@
 #include <condition_variable>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 using namespace kinetic;
 
 class ThreadsafeBlockingCallbackState {
@@ -168,7 +171,6 @@ KineticStatus ThreadsafeBlockingConnection::Put(const string& key, const string&
 }
 
 
-
 KineticStatus ThreadsafeBlockingConnection::Delete(const string& key, const string& version, WriteMode mode)
 {
     auto callback = make_shared<SimpleCallback>();
@@ -229,15 +231,24 @@ void slisten(
     fd_set read_fds, write_fds;
     int num_fds = 0;
     char buf[1];
+
     while(run){
         con->Run(&read_fds, &write_fds, &num_fds);
 
+        /* disable the Nagle buffering algorithm, small puts will otherwise be unduly delayed. */
+         if(num_fds){
+             int i = 1;
+             setsockopt( num_fds-1, IPPROTO_TCP, TCP_NODELAY, (void *)&i, sizeof(i));
+         }
+
         /* add pipe fd so that we can wake up select from the blocking API. */
         FD_SET(pipeFD, &read_fds);
+
         select(std::max(num_fds,pipeFD) + 1, &read_fds, &write_fds, NULL, NULL);
 
         /* clear pipe wakeup-fd */
         read(pipeFD, buf, 1);
+
     }
 }
 
@@ -246,7 +257,7 @@ ThreadsafeBlockingConnection::ThreadsafeBlockingConnection(
     std::shared_ptr<NonblockingKineticConnection> nonblocking_connection,
     unsigned int network_timeout_seconds) :
             BlockingKineticConnection(nonblocking_connection, network_timeout_seconds),
-            nonblocking_connection_(nonblocking_connection), run_listener(true)
+            nonblocking_connection_(nonblocking_connection), run_listener(true), invalid(kinetic::StatusCode::CLIENT_INTERNAL_ERROR, "Not implemented.")
 {
     int pFD[2];
     int err = pipe(pFD);
