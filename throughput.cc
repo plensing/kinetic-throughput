@@ -47,7 +47,7 @@ void parse(int argc, char** argv, configuration &config)
         }
     }
 
-    printf("configuration of cpp client throughput test (put only): \n\n");
+    printf("configuration of cpp client throughput test: \n\n");
     for( auto h : config.hosts)
         printf( "\t-host %s    \t{can be used multiple times} \n",h.c_str());
     printf( "\t-threads %d   \t\t{number of threads concurrently putting values}\n"
@@ -104,7 +104,7 @@ int main(int argc, char** argv)
     std::string value;
     value.resize(config.value_size, 'X');
 
-    auto test = [&](int tid){
+    auto test = [&](int tid, bool put){
 
         std::string key;
         int connectionID=0;
@@ -115,14 +115,21 @@ int main(int argc, char** argv)
             if(config.random_distribution) connectionID = std::hash<std::string>()(key) % connections.size();
             else connectionID = (connectionID+1) % connections.size();
 
+            if(put){
+                kinetic::KineticStatus status = connections[connectionID]->Put( key, "",
+                        kinetic::WriteMode::IGNORE_VERSION,
+                        kinetic::KineticRecord(value, std::to_string(i), "", Message_Algorithm_SHA1),
+                        config.persist);
 
-            kinetic::KineticStatus status = connections[connectionID]->Put( key, "",
-                    kinetic::WriteMode::IGNORE_VERSION,
-                    kinetic::KineticRecord(value, std::to_string(i), "", Message_Algorithm_SHA1),
-                    config.persist);
-
-            if(!status.ok())
-                printf("ERROR DURING PUT: %s \n",status.message().c_str());
+                if(!status.ok())
+                    printf("ERROR DURING PUT: %s \n",status.message().c_str());
+            }
+            else{
+                std::unique_ptr<kinetic::KineticRecord> record;
+                kinetic::KineticStatus status = connections[connectionID]->Get( key, record);
+                if(!status.ok())
+                    printf("ERROR DURING GET: %s \n",status.message().c_str());
+            }
         }
     };
 
@@ -130,19 +137,34 @@ int main(int argc, char** argv)
     std::vector<std::thread> threads;
 
     auto run_start = steady_clock::now();
-    for(int i=0; i<config.num_threads; i++) threads.push_back(std::thread(std::bind(test, i)));
+    for(int i=0; i<config.num_threads; i++) threads.push_back(std::thread(std::bind(test, i, true)));
     for(auto & t : threads) t.join();
     auto run_end  = steady_clock::now();
-
     int  duration = (int) duration_cast<milliseconds>(run_end-run_start).count();
 
-    printf( "\nDone in %d milliseconds "
+    printf( "\nPuts done in %d milliseconds "
             "\n\t -->  %f MB/second"
             "\n\t -->  %f keys/second"
             "\n",
             duration,
             (config.num_threads*config.num_keys*((float)value.size() / (1024*1024))) / ( duration / 1000.0),
             (config.num_threads*config.num_keys) / (duration / 1000.0)
+    );
+
+    threads.clear();
+    run_start = steady_clock::now();
+    for(int i=0; i<config.num_threads; i++) threads.push_back(std::thread(std::bind(test, i, false)));
+    for(auto & t : threads) t.join();
+    run_end  = steady_clock::now();
+    duration = (int) duration_cast<milliseconds>(run_end-run_start).count();
+
+    printf( "\nGets done in %d milliseconds "
+           "\n\t -->  %f MB/second"
+           "\n\t -->  %f keys/second"
+           "\n",
+           duration,
+           (config.num_threads*config.num_keys*((float)value.size() / (1024*1024))) / ( duration / 1000.0),
+           (config.num_threads*config.num_keys) / (duration / 1000.0)
     );
 
 
