@@ -85,6 +85,18 @@ ConnectionPointer connect(kinetic::KineticConnectionFactory &factory, std::strin
     return std::move(con);
 }
 
+enum class OperationType{
+    PUT, GET, DEL
+};
+std::string to_str(OperationType type){
+    switch(type){
+    case OperationType::GET: return("GET");
+    case OperationType::PUT: return("PUT");
+    case OperationType::DEL: return("DEL");
+    }
+    return ("invalid");
+}
+
 
 int main(int argc, char** argv)
 {
@@ -104,7 +116,7 @@ int main(int argc, char** argv)
     std::string value;
     value.resize(config.value_size, 'X');
 
-    auto test = [&](int tid, bool put){
+    auto test = [&](int tid, OperationType type){
 
         std::string key;
         int connectionID=0;
@@ -115,58 +127,55 @@ int main(int argc, char** argv)
             if(config.random_distribution) connectionID = std::hash<std::string>()(key) % connections.size();
             else connectionID = (connectionID+1) % connections.size();
 
-            if(put){
-                kinetic::KineticStatus status = connections[connectionID]->Put( key, "",
-                        kinetic::WriteMode::IGNORE_VERSION,
-                        kinetic::KineticRecord(value, std::to_string(i), "", Message_Algorithm_SHA1),
-                        config.persist);
-
-                if(!status.ok())
-                    printf("ERROR DURING PUT: %s \n",status.message().c_str());
+            kinetic::KineticStatus status = kinetic::KineticStatus(kinetic::StatusCode::REMOTE_OTHER_ERROR, "");
+            switch(type){
+            case OperationType::PUT:{
+                status = connections[connectionID]->Put( key, "",
+                           kinetic::WriteMode::IGNORE_VERSION,
+                           kinetic::KineticRecord(value, std::to_string(i), "", Message_Algorithm_SHA1),
+                           config.persist);
+                }
+                                break;
+            case OperationType::GET:{
+                      std::unique_ptr<kinetic::KineticRecord> record;
+                      status = connections[connectionID]->Get( key, record);
+                }
+                      break;
+            case OperationType::DEL:{
+                      status = connections[connectionID]->Delete(key, "", kinetic::WriteMode::IGNORE_VERSION);
+                }
+                      break;
             }
-            else{
-                std::unique_ptr<kinetic::KineticRecord> record;
-                kinetic::KineticStatus status = connections[connectionID]->Get( key, record);
-                if(!status.ok())
-                    printf("ERROR DURING GET: %s \n",status.message().c_str());
-            }
+            if(!status.ok())
+                 printf("ERROR DURING %s OPERATION: %s \n",to_str(type).c_str(), status.message().c_str());
         }
     };
 
 
-    std::vector<std::thread> threads;
 
-    auto run_start = steady_clock::now();
-    for(int i=0; i<config.num_threads; i++) threads.push_back(std::thread(std::bind(test, i, true)));
-    for(auto & t : threads) t.join();
-    auto run_end  = steady_clock::now();
-    int  duration = (int) duration_cast<milliseconds>(run_end-run_start).count();
+    OperationType types[] = {OperationType::PUT, OperationType::GET, OperationType::DEL};
 
-    printf( "\nPuts done in %d milliseconds "
-            "\n\t -->  %f MB/second"
-            "\n\t -->  %f keys/second"
-            "\n",
-            duration,
-            (config.num_threads*config.num_keys*((float)value.size() / (1024*1024))) / ( duration / 1000.0),
-            (config.num_threads*config.num_keys) / (duration / 1000.0)
-    );
+    for(auto t : types){
+        std::vector<std::thread> threads;
+        auto run_start = steady_clock::now();
 
-    threads.clear();
-    run_start = steady_clock::now();
-    for(int i=0; i<config.num_threads; i++) threads.push_back(std::thread(std::bind(test, i, false)));
-    for(auto & t : threads) t.join();
-    run_end  = steady_clock::now();
-    duration = (int) duration_cast<milliseconds>(run_end-run_start).count();
+        for(int i=0; i<config.num_threads; i++)
+            threads.push_back(std::thread(std::bind(test, i, t)));
+        for(auto & t : threads)
+            t.join();
 
-    printf( "\nGets done in %d milliseconds "
-           "\n\t -->  %f MB/second"
-           "\n\t -->  %f keys/second"
-           "\n",
-           duration,
-           (config.num_threads*config.num_keys*((float)value.size() / (1024*1024))) / ( duration / 1000.0),
-           (config.num_threads*config.num_keys) / (duration / 1000.0)
-    );
+        auto run_end  = steady_clock::now();
+        int  duration = (int) duration_cast<milliseconds>(run_end-run_start).count();
 
+        printf( "\n%s done in %d milliseconds "
+                "\n\t -->  %f MB/second"
+                "\n\t -->  %f keys/second"
+                "\n",
+                to_str(t).c_str(),duration,
+                (config.num_threads*config.num_keys*((float)value.size() / (1024*1024))) / ( duration / 1000.0),
+                (config.num_threads*config.num_keys) / (duration / 1000.0)
+        );
+    }
 
     return 0;
 }
