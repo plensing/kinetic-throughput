@@ -3,22 +3,24 @@
 #include <thread>
 #include <chrono>
 #include <string>
-#include <glog/logging.h>
-#include "kinetic/kinetic.h"
 #include "threadsafe_blocking_connection.h"
 
-using com::seagate::kinetic::client::proto::Message_Algorithm_SHA1;
-using kinetic::KineticConnectionFactory;
-using namespace std::chrono;
-typedef std::shared_ptr<kinetic::BlockingKineticConnection> ConnectionPointer;
 
+#define SHA1 com::seagate::kinetic::client::proto::Message_Algorithm_SHA1
+// #define SHA1 com::seagate::kinetic::client::proto::Command_Algorithm_SHA1
+
+using kinetic::KineticConnectionFactory;
+using kinetic::KineticRecord;
+using kinetic::WriteMode;
+using namespace std::chrono;
+
+enum class contype{ ORIG, SHARED, MULTI };
 struct configuration{
     int num_threads;
     int num_keys;
     int value_size;
-    bool custom_connection;
-    bool random_distribution;
     kinetic::PersistMode persist;
+    contype con;
     std::vector<std::string> hosts;
 };
 
@@ -37,53 +39,29 @@ void parse(int argc, char** argv, configuration &config)
             if(strcmp(argv[i+1],"write_through")==0)
                 config.persist = kinetic::PersistMode::WRITE_THROUGH;
         }
-        if(strcmp("-custom_connection", argv[i]) == 0){
-             if(strcmp(argv[i+1],"false")==0)
-                 config.custom_connection = false;
-        }
-        if(strcmp("-random_distribution", argv[i]) == 0){
-             if(strcmp(argv[i+1],"false")==0)
-                 config.random_distribution = false;
+        if(strcmp("-con", argv[i]) == 0){
+             if(strcmp(argv[i+1],"orig")==0)
+                 config.con = contype::ORIG;
+             else if(strcmp(argv[i+1],"multi")==0)
+                 config.con = contype::MULTI;
         }
     }
 
-    printf("configuration of cpp client throughput test: \n\n");
+    printf("configuration of cpp client throughput test: \n");
     for( auto h : config.hosts)
         printf( "\t-host %s    \t{can be used multiple times} \n",h.c_str());
     printf( "\t-threads %d   \t\t{number of threads concurrently putting values}\n"
             "\t-keys %d        \t{number of keys put by each threads} \n"
             "\t-size %d      \t\t{size of value in kilobytes} \n"
-            "\t-persist %s     \t{write_back,write_through} \n"
-            "\t-custom_connection %s  \t{custom or original}\n"
-            "\t-random_distribution %s \t{random or round robin} \n",
+            "\t-persist %s  \t{write_back,write_through} \n"
+            "\t-con %s    \t\t{orig,shared,multi}\n",
             config.num_threads, config.num_keys, config.value_size,
             config.persist ==  kinetic::PersistMode::WRITE_BACK ? "write_back" : "write_through",
-            config.custom_connection ? "true":"false", config.random_distribution ? "true":"false"
+            config.con == contype::ORIG ? "orig" : config.con == contype::SHARED ? "shared" : "multi"
                     );
     config.value_size*=1024;
 }
 
-ConnectionPointer connect(kinetic::KineticConnectionFactory &factory, std::string &host, bool custom_connection)
-{
-    ConnectionPointer con;
-    kinetic::ConnectionOptions options;
-    kinetic::Status status =  kinetic::Status::makeInternalError("no connection");
-
-    options.host = host;
-    options.port = 8123;
-    options.user_id = 1;
-    options.hmac_key = "asdfasdf";
-
-    if(!custom_connection) status = factory.NewThreadsafeBlockingConnection(options, con, 5);
-    else{
-       std::shared_ptr<kinetic::NonblockingKineticConnection> nblocking;
-       status = factory.NewThreadsafeNonblockingConnection(options, nblocking);
-       if(status.ok()) con.reset(new kinetic::ThreadsafeBlockingConnection(nblocking, 5));
-    }
-    if (status.notOk())
-       printf("Could not initialize connection\n");
-    return std::move(con);
-}
 
 enum class OperationType{
     PUT, GET, DEL
@@ -97,18 +75,46 @@ std::string to_str(OperationType type){
     return ("invalid");
 }
 
+void connect(const configuration &config,
+        std::vector<std::shared_ptr<kinetic::BlockingKineticConnection>> &conso,
+        std::vector<std::shared_ptr<kinetic::ThreadsafeBlockingConnection>> &consc)
+{
+    auto listener = std::shared_ptr<kinetic::ConnectionListener>(new kinetic::ConnectionListener());
+    for(auto h : config.hosts){
+       kinetic::ConnectionOptions options;
+       options.host = h;
+       options.port = 8123;
+       options.user_id = 1;
+       options.hmac_key = "asdfasdf";
+
+       if(config.con == contype::ORIG){
+           std::shared_ptr<kinetic::BlockingKineticConnection> con;
+           kinetic::KineticConnectionFactory factory = kinetic::NewKineticConnectionFactory();
+           factory.NewThreadsafeBlockingConnection(options, con, 5);
+           if(con)
+           conso.push_back(con);
+       }
+       else{
+           std::shared_ptr<kinetic::ThreadsafeBlockingConnection> con;
+           if(config.con == contype::MULTI)
+               con.reset(new kinetic::ThreadsafeBlockingConnection(options));
+           else if(config.con == contype::SHARED)
+               con.reset(new kinetic::ThreadsafeBlockingConnection(options, listener));
+           if(con)
+           consc.push_back(con);
+       }
+    }
+}
 
 int main(int argc, char** argv)
 {
-    struct configuration config = {1,10,1024,true,true,kinetic::PersistMode::WRITE_BACK,{}};
-    google::InitGoogleLogging(argv[0]);
-    kinetic::KineticConnectionFactory factory = kinetic::NewKineticConnectionFactory();
+    struct configuration config = {1,100,0,kinetic::PersistMode::WRITE_BACK,contype::SHARED,{}};
     parse(argc, argv, config);
 
-    std::vector<ConnectionPointer> connections;
-    for(auto h : config.hosts)
-        connections.push_back(connect(factory, h, config.custom_connection));
-    if(connections.empty()){
+    std::vector<std::shared_ptr<kinetic::BlockingKineticConnection>> conso;
+    std::vector<std::shared_ptr<kinetic::ThreadsafeBlockingConnection>> consc;
+    connect(config,conso,consc);
+    if(conso.empty() && consc.empty()){
         printf("\n No Connection // Specify -host \n");
         exit(0);
     }
@@ -123,28 +129,27 @@ int main(int argc, char** argv)
 
         for(int i=0; i<config.num_keys; i++){
             key = std::to_string(tid) + "_" + std::to_string(i);
-
-            if(config.random_distribution) connectionID = std::hash<std::string>()(key) % connections.size();
-            else connectionID = (connectionID+1) % connections.size();
-
+            connectionID = std::hash<std::string>()(key) % (config.con == contype::ORIG ? conso.size() : consc.size());
             kinetic::KineticStatus status = kinetic::KineticStatus(kinetic::StatusCode::REMOTE_OTHER_ERROR, "");
+
             switch(type){
             case OperationType::PUT:{
-                status = connections[connectionID]->Put( key, "",
-                           kinetic::WriteMode::IGNORE_VERSION,
-                           kinetic::KineticRecord(value, std::to_string(i), "", Message_Algorithm_SHA1),
-                           config.persist);
+                    KineticRecord record(value, std::to_string(i), "", SHA1);
+                    if(config.con == contype::ORIG) status = conso[connectionID]->Put(key, "", WriteMode::IGNORE_VERSION, record , config.persist);
+                    else status = consc[connectionID]->Put(key, "", WriteMode::IGNORE_VERSION, record , config.persist);
                 }
-                                break;
+                break;
             case OperationType::GET:{
-                      std::unique_ptr<kinetic::KineticRecord> record;
-                      status = connections[connectionID]->Get( key, record);
+                    std::unique_ptr<KineticRecord> record;
+                    if(config.con == contype::ORIG) status = conso[connectionID]->Get( key, record);
+                    else status = consc[connectionID]->Get(key, record);
                 }
-                      break;
+                break;
             case OperationType::DEL:{
-                      status = connections[connectionID]->Delete(key, "", kinetic::WriteMode::IGNORE_VERSION);
+                    if(config.con == contype::ORIG) status = conso[connectionID]->Delete(key, "", WriteMode::IGNORE_VERSION);
+                    else status = consc[connectionID]->Delete(key, "", WriteMode::IGNORE_VERSION);
                 }
-                      break;
+                break;
             }
             if(!status.ok())
                  printf("ERROR DURING %s OPERATION: %s \n",to_str(type).c_str(), status.message().c_str());
@@ -176,6 +181,5 @@ int main(int argc, char** argv)
                 (config.num_threads*config.num_keys) / (duration / 1000.0)
         );
     }
-
     return 0;
 }
