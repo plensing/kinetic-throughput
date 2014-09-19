@@ -3,8 +3,8 @@ project(throughput CXX C)
 
 set(CMAKE_CXX_FLAGS "-g --std=c++11 -Wall -Wextra -Werror -Wno-unknown-warning-option -Wno-unused-parameter -Wno-unused-local-typedefs -Wno-null-dereference -DGTEST_USE_OWN_TR1_TUPLE=1 -D__STDC_FORMAT_MACROS")
 
-set(KINETIC_CLIENT_PATH  "$ENV{HOME}/git/kinetic-cpp-client")
-set(KINETIC_CLIENT_BUILD "${KINETIC_CLIENT_PATH}/build")
+set(KINETIC_CLIENT_PATH  "$ENV{HOME}/git/kinetic-cpp-client-2.0.4")
+set(KINETIC_CLIENT_BUILD "${KINETIC_CLIENT_PATH}")
 
 if(EXISTS ${KINETIC_CLIENT_PATH} AND EXISTS ${KINETIC_CLIENT_BUILD})
    message("Found existing kinetic-cpp-client at ${KINETIC_CLIENT_PATH}")
@@ -39,7 +39,8 @@ endif(APPLE)
 
 add_executable(throughput
      throughput.cc
-     threadsafe_blocking_connection.cc
+     CustomConnection.cc
+     WrapperConnection.cc
 )
 add_dependencies(throughput
     kinetic_cpp_client

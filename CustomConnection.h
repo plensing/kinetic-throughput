@@ -14,10 +14,9 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef KINETIC_CPP_CLIENT_THREADSAFE_BLOCKING_CONNECTION_H_
-#define KINETIC_CPP_CLIENT_THREADSAFE_BLOCKING_CONNECTION_H_
-
-#include "kinetic/kinetic.h"
+#ifndef CUSTOMCONNECTION
+#define CUSTOMCONNECTION
+#include "ConnectionInterface.h"
 
 namespace kinetic {
 
@@ -25,6 +24,7 @@ using std::shared_ptr;
 using std::unique_ptr;
 using std::string;
 using std::vector;
+using std::mutex;
 using kinetic::ConnectionOptions;
 using kinetic::KineticRecord;
 
@@ -34,6 +34,7 @@ private:
     int  pipeFD_receive;
     int  pipeFD_send;
     bool run;
+    mutex lock;
 
 public:
     explicit ConnectionListener();
@@ -47,7 +48,7 @@ public:
 
 /* Kinetic connection class variant that implements an independent socket listener in order to provide
  * blocking functionality for multi-threaded scenarios. Only implements subset of blocking kinetic interface. */
-class ThreadsafeBlockingConnection{
+class CustomConnection : public BlockingConnectionInterface {
 
 private:
     std::shared_ptr<ConnectionListener> listener_;
@@ -56,9 +57,9 @@ private:
     void connect(const ConnectionOptions &options);
 
 public:
-    explicit ThreadsafeBlockingConnection(const ConnectionOptions &options);
-    explicit ThreadsafeBlockingConnection(const ConnectionOptions &options, std::shared_ptr<ConnectionListener> listener);
-    ~ThreadsafeBlockingConnection();
+    explicit CustomConnection(const ConnectionOptions &options);
+    explicit CustomConnection(const ConnectionOptions &options, std::shared_ptr<ConnectionListener> listener);
+    ~CustomConnection();
 
     KineticStatus NoOp();
     KineticStatus Get(const string &key, unique_ptr<KineticRecord>& record);
