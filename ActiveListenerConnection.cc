@@ -1,4 +1,4 @@
-#include "CustomConnection.h"
+#include "ActiveListenerConnection.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -12,7 +12,7 @@ using namespace kinetic;
 class ThreadsafeBlockingCallbackState {
 private:
     std::condition_variable cv;
-    std::mutex    mutex;
+    std::mutex mutex;
     KineticStatus status;
     bool done;
 
@@ -130,7 +130,7 @@ class GetLogCallback : public GetLogCallbackInterface, public ThreadsafeBlocking
 
 
 
-KineticStatus CustomConnection::NoOp()
+KineticStatus ActiveListenerConnection::NoOp()
 {
     auto callback = make_shared<SimpleCallback>();
     nonblocking_connection_->NoOp(callback);
@@ -139,7 +139,7 @@ KineticStatus CustomConnection::NoOp()
     return callback->getResult();
 }
 
-KineticStatus CustomConnection::Get(const string& key, unique_ptr<KineticRecord>& record)
+KineticStatus ActiveListenerConnection::Get(const string& key, unique_ptr<KineticRecord>& record)
 {
     unique_ptr<string> actual_key(nullptr);
     auto callback = make_shared<GetCallback>(actual_key, record, false);
@@ -150,7 +150,7 @@ KineticStatus CustomConnection::Get(const string& key, unique_ptr<KineticRecord>
 }
 
 
-KineticStatus CustomConnection::Put(const string& key, const string& current_version, WriteMode mode, const KineticRecord& record)
+KineticStatus ActiveListenerConnection::Put(const string& key, const string& current_version, WriteMode mode, const KineticRecord& record)
 {
     auto callback = make_shared<SimpleCallback>();
     nonblocking_connection_->Put(key, current_version, mode, make_shared<KineticRecord>(record), callback);
@@ -159,7 +159,7 @@ KineticStatus CustomConnection::Put(const string& key, const string& current_ver
     return callback->getResult();
 }
 
-KineticStatus CustomConnection::Put(const string& key, const string& current_version, WriteMode mode, const KineticRecord& record, PersistMode persistMode)
+KineticStatus ActiveListenerConnection::Put(const string& key, const string& current_version, WriteMode mode, const KineticRecord& record, PersistMode persistMode)
 {
     auto callback = make_shared<SimpleCallback>();
     nonblocking_connection_->Put(key, current_version, mode, make_shared<KineticRecord>(record), callback, persistMode);
@@ -169,7 +169,7 @@ KineticStatus CustomConnection::Put(const string& key, const string& current_ver
 }
 
 
-KineticStatus CustomConnection::Delete(const string& key, const string& version, WriteMode mode)
+KineticStatus ActiveListenerConnection::Delete(const string& key, const string& version, WriteMode mode)
 {
     auto callback = make_shared<SimpleCallback>();
     nonblocking_connection_->Delete(key, version, mode, callback);
@@ -178,7 +178,16 @@ KineticStatus CustomConnection::Delete(const string& key, const string& version,
     return callback->getResult();
 }
 
-KineticStatus CustomConnection::GetVersion(const string &key, unique_ptr<string>& version)
+KineticStatus ActiveListenerConnection::Delete(const string& key, const string& version, WriteMode mode, PersistMode persistMode)
+{
+    auto callback = make_shared<SimpleCallback>();
+    nonblocking_connection_->Delete(key, version, mode, callback, persistMode);
+
+    listener_->poke();;
+    return callback->getResult();
+}
+
+KineticStatus ActiveListenerConnection::GetVersion(const string &key, unique_ptr<string>& version)
 {
     auto callback = make_shared<GetVersionCallback>(version);
     nonblocking_connection_->GetVersion(key, callback);
@@ -187,7 +196,7 @@ KineticStatus CustomConnection::GetVersion(const string &key, unique_ptr<string>
     return callback->getResult();
 }
 
-KineticStatus CustomConnection::GetKeyRange(const string& start_key, bool start_key_inclusive, const string& end_key,
+KineticStatus ActiveListenerConnection::GetKeyRange(const string& start_key, bool start_key_inclusive, const string& end_key,
         bool end_key_inclusive, bool reverse_results, int32_t max_results, unique_ptr<vector<string>>& keys)
 {
     auto callback = make_shared<GetKeyRangeCallback>(keys);
@@ -197,7 +206,7 @@ KineticStatus CustomConnection::GetKeyRange(const string& start_key, bool start_
     return callback->getResult();
 }
 
-KineticStatus CustomConnection::SetClusterVersion(int64_t cluster_version)
+KineticStatus ActiveListenerConnection::SetClusterVersion(int64_t cluster_version)
 {
     auto callback = make_shared<SimpleCallback>();
     nonblocking_connection_->SetClusterVersion(cluster_version, callback);
@@ -206,7 +215,7 @@ KineticStatus CustomConnection::SetClusterVersion(int64_t cluster_version)
     return callback->getResult();
 }
 
-KineticStatus CustomConnection::GetLog(unique_ptr<DriveLog>& drive_log)
+KineticStatus ActiveListenerConnection::GetLog(unique_ptr<DriveLog>& drive_log)
 {
     auto callback = make_shared<GetLogCallback>(drive_log);
     nonblocking_connection_->GetLog(callback);
@@ -215,13 +224,32 @@ KineticStatus CustomConnection::GetLog(unique_ptr<DriveLog>& drive_log)
     return callback->getResult();
 }
 
-void CustomConnection::SetClientClusterVersion(int64_t cluster_version)
+KineticStatus ActiveListenerConnection::GetLog(const vector<Command_GetLog_Type>& types, unique_ptr<DriveLog>& drive_log)
+{
+    auto callback = make_shared<GetLogCallback>(drive_log);
+    nonblocking_connection_->GetLog(types, callback);
+
+    listener_->poke();
+    return callback->getResult();
+}
+
+KineticStatus ActiveListenerConnection::InstantErase(const string& pin)
+{
+    auto callback = make_shared<SimpleCallback>();
+    nonblocking_connection_->InstantErase(pin, callback);
+
+    listener_->poke();
+    return callback->getResult();
+}
+
+
+void ActiveListenerConnection::SetClientClusterVersion(int64_t cluster_version)
 {
     nonblocking_connection_->SetClientClusterVersion(cluster_version);
 }
 
 
-void CustomConnection::connect(const ConnectionOptions &options)
+void ActiveListenerConnection::connect(const ConnectionOptions &options)
 {
     if(!listener_)
         throw std::runtime_error("No connection listener set. ");
@@ -234,28 +262,35 @@ void CustomConnection::connect(const ConnectionOptions &options)
     listener_->con_add(nonblocking_connection_);
 }
 
-CustomConnection::CustomConnection(const ConnectionOptions &options):
+ActiveListenerConnection::ActiveListenerConnection(const ConnectionOptions &options):
     listener_(new ConnectionListener())
 {
     connect(options);
 }
 
-CustomConnection::CustomConnection(const ConnectionOptions &options, std::shared_ptr<ConnectionListener> listener):
+ActiveListenerConnection::ActiveListenerConnection(const ConnectionOptions &options, std::shared_ptr<ConnectionListener> listener):
    listener_(listener)
 {
     connect(options);
 }
 
-CustomConnection::~CustomConnection()
+ActiveListenerConnection::~ActiveListenerConnection()
 {
     listener_->con_remove(nonblocking_connection_);
 }
 
 
 void slisten(
-        vector<shared_ptr<NonblockingKineticConnection>> &connections,
-        int pipeFD, bool &run)
+        int pipeFD,
+        vector<shared_ptr<ThreadsafeNonblockingKineticConnection>> **cons,
+        bool **r)
 {
+    bool run = true;
+    vector<shared_ptr<ThreadsafeNonblockingKineticConnection>> connections;
+
+    *r = &run;
+    *cons = &connections;
+
     fd_set read_fds, write_fds;
     fd_set tmp_r, tmp_w;
     int num_fds;
@@ -267,16 +302,16 @@ void slisten(
         FD_ZERO(&write_fds);
         num_fds=0;
 
-        /* This is pretty hacky. But since Nonblocking connection uses fd_sets to return
-         * a single fd it is just faster. */
+
         for(auto con : connections){
             if(!con) continue;
             con->Run(&tmp_r, &tmp_w, &fd);
             if(!fd)  continue;
 
-           /* if     (FD_ISSET(fd-1, &tmp_r))*/ FD_SET(fd-1, &read_fds);
-           /* else if(FD_ISSET(fd-1, &tmp_w))*/ FD_SET(fd-1, &write_fds);
-           // else printf("returned FD does not make sense\n");
+            /* This is pretty hacky. But since Nonblocking connection uses fd_sets to return
+             * a single fd it is just faster. */
+            FD_SET(fd-1, &read_fds);
+            FD_SET(fd-1, &write_fds);
             num_fds=std::max(fd,num_fds);
         }
 
@@ -287,12 +322,10 @@ void slisten(
 
         /* clear pipe wakeup-fd */
         read(pipeFD, buf, 1);
-
     }
 }
 
-ConnectionListener::ConnectionListener():
-    run(true)
+ConnectionListener::ConnectionListener()
 {
     int pFD[2];
     int err = pipe(pFD);
@@ -303,14 +336,16 @@ ConnectionListener::ConnectionListener():
     fcntl(pipeFD_receive, F_SETFL, O_NONBLOCK);
     fcntl(pipeFD_send, F_SETFL, O_NONBLOCK);
 
+    run = nullptr;
+
     std::thread( std::bind(slisten,
-            std::ref(connections),
-            pipeFD_receive, std::ref(run))).detach();
+                           pipeFD_receive, &connections, &run)
+               ).detach();
 }
 
 ConnectionListener::~ConnectionListener()
 {
-    run=false;
+    *run=false;
     poke();
 }
 
@@ -319,19 +354,19 @@ void ConnectionListener::poke()
     write(pipeFD_send,"1",1);
 }
 
-bool ConnectionListener::con_add(shared_ptr<NonblockingKineticConnection> con)
+bool ConnectionListener::con_add(shared_ptr<ThreadsafeNonblockingKineticConnection> con)
 {
-    auto it = std::find (connections.begin(), connections.end(), con);
-    if(it != connections.end()) return false;
-    connections.push_back(con);
+    auto it = std::find (connections->begin(), connections->end(), con);
+    if(it != connections->end()) return false;
+    connections->push_back(con);
     return true;
 }
 
-bool ConnectionListener::con_remove(shared_ptr<NonblockingKineticConnection> con)
+bool ConnectionListener::con_remove(shared_ptr<ThreadsafeNonblockingKineticConnection> con)
 {
-    auto it = std::find (connections.begin(), connections.end(), con);
-    if(it == connections.end()) return false;
-    connections.erase(it);
+    auto it = std::find (connections->begin(), connections->end(), con);
+    if(it == connections->end()) return false;
+    connections->erase(it);
     return true;
 }
 

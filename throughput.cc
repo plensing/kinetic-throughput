@@ -3,19 +3,18 @@
 #include <thread>
 #include <chrono>
 #include <string>
-#include "CustomConnection.h"
-#include "WrapperConnection.h"
-
-
-#define SHA1 com::seagate::kinetic::client::proto::Message_Algorithm_SHA1
-//#define SHA1 com::seagate::kinetic::client::proto::Command_Algorithm_SHA1
+#include "ActiveListenerConnection.h"
+#include <glog/logging.h>
 
 using kinetic::KineticConnectionFactory;
 using kinetic::KineticRecord;
 using kinetic::WriteMode;
+using std::shared_ptr;
+using std::vector;
+using std::string;
 using namespace std::chrono;
 
-enum class contype{ ORIG, SHARED, MULTI };
+enum class contype{ ORIG, CUSTOM };
 enum class conselect{ HASH, FIXED };
 struct configuration{
     int num_threads;
@@ -24,7 +23,7 @@ struct configuration{
     kinetic::PersistMode persist;
     contype con;
     conselect select;
-    std::vector<std::string> hosts;
+    vector<string> hosts;
 };
 
 void parse(int argc, char** argv, configuration &config)
@@ -43,10 +42,8 @@ void parse(int argc, char** argv, configuration &config)
                 config.persist = kinetic::PersistMode::WRITE_THROUGH;
         }
         if(strcmp("-con", argv[i]) == 0){
-             if(strcmp(argv[i+1],"orig")==0)
-                 config.con = contype::ORIG;
-             else if(strcmp(argv[i+1],"multi")==0)
-                 config.con = contype::MULTI;
+             if(strcmp(argv[i+1],"custom")==0)
+                 config.con = contype::CUSTOM;
         }
         if(strcmp("-select", argv[i]) == 0){
              if(strcmp(argv[i+1],"fixed")==0)
@@ -60,12 +57,12 @@ void parse(int argc, char** argv, configuration &config)
     printf( "\t-threads %d   \t\t{number of threads concurrently putting values}\n"
             "\t-keys %d        \t{number of keys put by each thread} \n"
             "\t-size %d      \t\t{size of value in kilobytes} \n"
-            "\t-persist %s  \t{write_back,write_through} \n"
-            "\t-con %s    \t\t{orig,shared,multi}\n"
-            "\t-select %s \t\t{hash,fixed}\n",
+            "\t-persist %s     \t{write_back,write_through} \n"
+            "\t-con %s       \t\t{orig,custom}\n"
+            "\t-select %s    \t\t{hash,fixed}\n",
             config.num_threads, config.num_keys, config.value_size,
             config.persist ==  kinetic::PersistMode::WRITE_BACK ? "write_back" : "write_through",
-            config.con == contype::ORIG ? "orig" : config.con == contype::SHARED ? "shared" : "multi",
+            config.con == contype::ORIG ? "standard" : "custom",
             config.select == conselect::HASH ? "hash" : "fixed"
                     );
     config.value_size*=1024;
@@ -75,7 +72,7 @@ void parse(int argc, char** argv, configuration &config)
 enum class OperationType{
     PUT, GET, DEL
 };
-std::string to_str(OperationType type){
+string to_str(OperationType type){
     switch(type){
     case OperationType::GET: return("GET");
     case OperationType::PUT: return("PUT");
@@ -84,10 +81,11 @@ std::string to_str(OperationType type){
     return ("invalid");
 }
 
-void connect(const configuration &config, std::vector<std::shared_ptr<kinetic::BlockingConnectionInterface>> &cons)
+void connect(const configuration &config, vector<shared_ptr<kinetic::BlockingKineticConnectionInterface>> &cons)
 {
-    auto listener = std::shared_ptr<kinetic::ConnectionListener>(new kinetic::ConnectionListener());
-    std::shared_ptr<kinetic::BlockingConnectionInterface> con;
+    auto listener = shared_ptr<kinetic::ConnectionListener>(new kinetic::ConnectionListener());
+    kinetic::KineticConnectionFactory factory = kinetic::NewKineticConnectionFactory();
+    shared_ptr<kinetic::BlockingKineticConnectionInterface> con;
 
     for(auto h : config.hosts){
        kinetic::ConnectionOptions options;
@@ -95,14 +93,21 @@ void connect(const configuration &config, std::vector<std::shared_ptr<kinetic::B
        options.port = 8123;
        options.user_id = 1;
        options.hmac_key = "asdfasdf";
-       //options.use_ssl = true;
+       options.use_ssl = false;
 
-       if(config.con == contype::ORIG)
-           con.reset(new kinetic::WrapperConnection(options));
-       if(config.con == contype::MULTI)
-           con.reset(new kinetic::CustomConnection(options));
-       if(config.con == contype::SHARED)
-           con.reset(new kinetic::CustomConnection(options,listener));
+       if(config.con == contype::ORIG){
+           shared_ptr<kinetic::ThreadsafeBlockingKineticConnection> ocon;
+           factory.NewThreadsafeBlockingConnection(options, ocon, 5);
+           con = ocon;
+       }
+       else if(config.con == contype::CUSTOM){
+        try{
+           con.reset(new kinetic::ActiveListenerConnection(options,listener));
+        }
+        catch(std::exception & e){
+            printf("Exception: %s",e.what());
+        }
+       }
        if(con)
            cons.push_back(con);
     }
@@ -110,33 +115,34 @@ void connect(const configuration &config, std::vector<std::shared_ptr<kinetic::B
 
 int main(int argc, char** argv)
 {
-    struct configuration config = {1,100,0,kinetic::PersistMode::WRITE_BACK,contype::SHARED,conselect::HASH,{}};
+    google::InitGoogleLogging("");
+    struct configuration config = {1,100,0,kinetic::PersistMode::WRITE_BACK,contype::ORIG,conselect::HASH,{}};
     parse(argc, argv, config);
 
-    std::vector<std::shared_ptr<kinetic::BlockingConnectionInterface>> cons;
+    vector<shared_ptr<kinetic::BlockingKineticConnectionInterface>> cons;
     connect(config,cons);
     if(cons.empty()){
         printf("\n No Connection // Specify -host \n");
         exit(0);
     }
 
-    std::string value;
+    string value;
     value.resize(config.value_size, 'X');
 
     auto test = [&](int tid, OperationType type){
 
-        std::string key;
+        string key;
         int connectionID = tid % cons.size();
 
         for(int i=0; i<config.num_keys; i++){
             key = std::to_string(tid) + "_" + std::to_string(i);
             if(config.select == conselect::HASH)
-                connectionID = std::hash<std::string>()(key) % cons.size();
+                connectionID = std::hash<string>()(key) % cons.size();
             kinetic::KineticStatus status = kinetic::KineticStatus(kinetic::StatusCode::REMOTE_OTHER_ERROR, "");
 
             switch(type){
             case OperationType::PUT:{
-                    KineticRecord record(value, std::to_string(i), "", SHA1);
+                    KineticRecord record(value, std::to_string(i), "", com::seagate::kinetic::client::proto::Command_Algorithm_SHA1);
                     status = cons[connectionID]->Put(key, "", WriteMode::IGNORE_VERSION, record , config.persist);
                 }
                 break;
@@ -159,7 +165,7 @@ int main(int argc, char** argv)
     OperationType types[] = {OperationType::PUT, OperationType::GET, OperationType::DEL};
 
     for(auto t : types){
-        std::vector<std::thread> threads;
+        vector<std::thread> threads;
         auto run_start = steady_clock::now();
 
         for(int i=0; i<config.num_threads; i++)
