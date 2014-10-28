@@ -337,10 +337,12 @@ ConnectionListener::ConnectionListener()
     fcntl(pipeFD_send, F_SETFL, O_NONBLOCK);
 
     run = nullptr;
-
-    std::thread( std::bind(slisten,
+    auto listener = std::thread( std::bind(slisten,
                            pipeFD_receive, &connections, &run)
-               ).detach();
+               );
+    while(run == nullptr)
+        usleep(10);
+    listener.detach();
 }
 
 ConnectionListener::~ConnectionListener()

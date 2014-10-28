@@ -57,9 +57,9 @@ void parse(int argc, char** argv, configuration &config)
     printf( "\t-threads %d   \t\t{number of threads concurrently putting values}\n"
             "\t-keys %d        \t{number of keys put by each thread} \n"
             "\t-size %d      \t\t{size of value in kilobytes} \n"
-            "\t-persist %s     \t{write_back,write_through} \n"
-            "\t-con %s       \t\t{orig,custom}\n"
-            "\t-select %s    \t\t{hash,fixed}\n",
+            "\t-persist %s   \t{write_back,write_through} \n"
+            "\t-con %s       \t{standard,custom}\n"
+            "\t-select %s    \t{hash,fixed}\n",
             config.num_threads, config.num_keys, config.value_size,
             config.persist ==  kinetic::PersistMode::WRITE_BACK ? "write_back" : "write_through",
             config.con == contype::ORIG ? "standard" : "custom",
@@ -143,7 +143,7 @@ int main(int argc, char** argv)
             switch(type){
             case OperationType::PUT:{
                     KineticRecord record(value, std::to_string(i), "", com::seagate::kinetic::client::proto::Command_Algorithm_SHA1);
-                    status = cons[connectionID]->Put(key, "", WriteMode::IGNORE_VERSION, record , config.persist);
+                    status = cons[connectionID]->Put(key, "", WriteMode::IGNORE_VERSION, record, config.persist);
                 }
                 break;
             case OperationType::GET:{
@@ -152,7 +152,7 @@ int main(int argc, char** argv)
                 }
                 break;
             case OperationType::DEL:{
-                    status = cons[connectionID]->Delete(key, "", WriteMode::IGNORE_VERSION);
+                    status = cons[connectionID]->Delete(key, "", WriteMode::IGNORE_VERSION, config.persist);
                 }
                 break;
             }
