@@ -63,7 +63,7 @@ public:
     KineticStatus InstantErase(const string& pin);
 
 
-    // Didn't bother to implement below methods. It's simple as pie though if functionality is ever required.
+    // Didn't bother to implement below methods. 
     KineticStatus Get(const shared_ptr<const string> key,unique_ptr<KineticRecord>& record){return invalid;}
     KineticStatus GetNext(const shared_ptr<const string> key,unique_ptr<string>& actual_key,
             unique_ptr<KineticRecord>& record){return invalid;}
