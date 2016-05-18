@@ -17,9 +17,6 @@ using namespace std::chrono;
 enum class OperationType {
     PUT, GET, DEL, LOG
 };
-enum class contype{ 
-  ORIG, CUSTOM 
-};
 enum class conselect{ 
   HASH, FIXED 
 };
@@ -29,7 +26,6 @@ struct configuration{
     int value_size;
     int report_keys; 
     kinetic::PersistMode persist;
-    contype con;
     conselect select;
     vector<string> hosts;
     vector<OperationType> ops;
@@ -73,10 +69,6 @@ void parse(int argc, char** argv, configuration &config)
             if(strcmp(argv[i+1],"write_through")==0)
                 config.persist = kinetic::PersistMode::WRITE_THROUGH;
         }
-        if(strcmp("-con", argv[i]) == 0){
-             if(strcmp(argv[i+1],"custom")==0)
-                 config.con = contype::CUSTOM;
-        }
         if(strcmp("-select", argv[i]) == 0){
              if(strcmp(argv[i+1],"fixed")==0)
                  config.select = conselect::FIXED;
@@ -109,13 +101,11 @@ void parse(int argc, char** argv, configuration &config)
             "\t-size %d      \t\t{size of value in kilobytes} \n"
             "\t-report %d    \t report operations / second and bandwidth every n keys\n"
             "\t-persist %s   \t{write_back,write_through} \n"
-            "\t-con %s       \t{standard,custom}\n"
             "\t-select %s    \t{hash,fixed}\n"
             "\t-rr %d        \t{sequential or random read}\n",
             config.security_key.c_str(), config.security_id, 
             config.num_threads, config.num_keys, config.value_size, config.report_keys,
             config.persist ==  kinetic::PersistMode::WRITE_BACK ? "write_back" : "write_through",
-            config.con == contype::ORIG ? "standard" : "custom",
             config.select == conselect::HASH ? "hash" : "fixed",
             config.rr
                     );
@@ -189,7 +179,7 @@ void test(int tid, int start_key, OperationType type, const configuration& confi
 
 int main(int argc, char** argv)
 {
-    struct configuration config = {1,100,0,0,kinetic::PersistMode::WRITE_BACK,contype::ORIG,conselect::HASH,{},{},1,"asdfasdf",false};
+    struct configuration config = {1,100,0,0,kinetic::PersistMode::WRITE_BACK,conselect::HASH,{},{},1,"asdfasdf",false};
     parse(argc, argv, config);
 
     vector<shared_ptr<kinetic::BlockingKineticConnectionInterface>> cons;

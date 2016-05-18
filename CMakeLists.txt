@@ -25,9 +25,6 @@ endif(APPLE)
 add_executable(throughput
      throughput.cc
 )
-add_dependencies(throughput
-    kinetic_cpp_client
-)
 target_link_libraries(throughput
     ${LIBRARY_DEPENDENCIES}
 )
