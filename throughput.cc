@@ -25,6 +25,7 @@ struct configuration{
   int num_keys;
   int value_size;
   int report_keys;
+  bool flush_on_report;
   kinetic::PersistMode persist;
   conselect select;
   vector<string> hosts;
@@ -67,6 +68,10 @@ void parse(int argc, char** argv, configuration &config)
       if(strcmp(argv[i+1],"write_through")==0)
         config.persist = kinetic::PersistMode::WRITE_THROUGH;
     }
+    if(strcmp("-flush", argv[i]) == 0){
+      if(strcmp(argv[i+1],"enabled")==0)
+        config.flush_on_report = true;
+    }
     if(strcmp("-select", argv[i]) == 0){
       if(strcmp(argv[i+1],"fixed")==0)
         config.select = conselect::FIXED;
@@ -101,11 +106,13 @@ void parse(int argc, char** argv, configuration &config)
             "  Number of keys: -keys %d \n"
             "  Size of keys in KB: -size %d \n"
             "  Report average performance ever n keys: -report %d \n"
-            "  Kinetic persistence: -persist %s   \n"
+            "  Flush connection before reporting {enabled,disabled}: -flush %s \n"
+            "  Put / Delete persistence {write_back,write_through}: %s   \n"
             "  Selection strategy for connections {hash,fixed}: -select %s \n"
             "  Randomize key every n sequential operations, a value of 0 disables randomization: -ran_seq %d \n",
           config.security_key.c_str(), config.security_id,
           config.num_threads, config.num_keys, config.value_size, config.report_keys,
+          config.flush_on_report ? "enabled" : "disabled",
           config.persist ==  kinetic::PersistMode::WRITE_BACK ? "write_back" : "write_through",
           config.select == conselect::HASH ? "hash" : "fixed",
           config.random_sequence_size);
@@ -187,11 +194,14 @@ void test(int tid, int start_key, OperationType type, const configuration& confi
     if(!status.ok())
       printf("ERROR DURING %s OPERATION: %s \n",to_str(type).c_str(), status.message().c_str());
   }
+
+  if(config.flush_on_report)
+    cons[connectionID]->Flush();
 }
 
 int main(int argc, char** argv)
 {
-  struct configuration config = {1,100,0,0,kinetic::PersistMode::WRITE_BACK,conselect::FIXED,{},{},1,"asdfasdf",0};
+  struct configuration config = {1,100,0,0,false,kinetic::PersistMode::WRITE_BACK,conselect::FIXED,{},{},1,"asdfasdf",0};
   parse(argc, argv, config);
 
   vector<shared_ptr<kinetic::BlockingKineticConnectionInterface>> cons;
