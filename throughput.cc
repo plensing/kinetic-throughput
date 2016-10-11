@@ -172,7 +172,7 @@ void test(int thread_id,
     kinetic::KineticStatus status = kinetic::KineticStatus(kinetic::StatusCode::REMOTE_OTHER_ERROR, "");
     switch (operationType) {
       case OperationType::PUT: {
-        KineticRecord record(value, std::to_string((long long int) i), "",
+        KineticRecord record(value, std::to_string((long long int) i), std::to_string((long long int) i),
                              com::seagate::kinetic::client::proto::Command_Algorithm_SHA1);
         status = cons[connectionID]->Put(key, "", WriteMode::IGNORE_VERSION, record, config.persist);
       }
