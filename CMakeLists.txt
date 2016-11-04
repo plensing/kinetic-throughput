@@ -23,6 +23,7 @@ else()
 endif(APPLE)
 
 add_executable(throughput
+     KineticCallbacks.cc
      throughput.cc
 )
 target_link_libraries(throughput
