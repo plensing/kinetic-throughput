@@ -50,7 +50,12 @@ public:
   //! @param min_outstanding the number of outstanding results to wait for
   //----------------------------------------------------------------------------
   void wait_until(std::chrono::system_clock::time_point timeout_time);
+
   void run_until(std::unique_ptr <kinetic::ThreadsafeNonblockingKineticConnection>& con, int outstanding_requests);
+
+  void addRequestSize(size_t size);
+  size_t getRequestSize();
+
 
   //----------------------------------------------------------------------------
   //! Constructor
@@ -69,6 +74,8 @@ private:
   std::condition_variable cv;
   //! mutex for condition variable and thread safety
   std::mutex mutex;
+
+  size_t request_size;
 };
 
 //------------------------------------------------------------------------------
@@ -113,7 +120,7 @@ public:
   //----------------------------------------------------------------------------
   virtual ~KineticCallback();
 
-private:
+protected:
   //! the status / result of the kinetic operation this callback belongs to
   kinetic::KineticStatus status;
   //! count outstanding operations and wake blocked thread when all are ready

@@ -47,6 +47,9 @@ struct configuration {
   Range key_size;
   Range value_size;
 
+  std::string req_version;
+  std::string new_version;
+
   kinetic::PersistMode persist;
   bool flush_on_report;
 
@@ -73,6 +76,7 @@ string to_str(OperationType type){
 
 void parse(int argc, char** argv, configuration &config)
 {
+  /* Parse set options */
   for(int i = 1; i+1 < argc; i++){
     if(strcmp("-keys", argv[i]) == 0)
       config.keys.end = std::stoi(argv[i+1]);
@@ -104,6 +108,10 @@ void parse(int argc, char** argv, configuration &config)
       config.security_id = std::stoi(argv[i+1]);
     if(strcmp("-pw", argv[i]) == 0)
       config.security_key = string(argv[i+1]);
+    if(strcmp("-req_version", argv[i]) == 0)
+      config.req_version = string(argv[i+1]);
+    if(strcmp("-new_version", argv[i]) == 0)
+      config.new_version = string(argv[i+1]);
     if(strcmp("-ran_seq", argv[i]) == 0)
       config.random_sequence_size = std::stoi(argv[i+1]);
     if(strcmp("-seed", argv[i]) == 0)
@@ -132,51 +140,61 @@ void parse(int argc, char** argv, configuration &config)
     }
   }
 
+  /* Sanitize set options */
   if(!config.report_keys || config.report_keys > config.keys.size())
     config.report_keys = config.keys.size();
   if(!config.random_sequence_size)
     config.random_sequence_size = config.keys.size();
   if(config.key_size.start < 10)
     config.key_size.start = 10;
-  if(config.key_size.end < 10)
-    config.key_size.end = 10;
+  if(config.key_size.end < config.key_size.start)
+    config.key_size.end = config.key_size.start;
+  if(config.value_size.end < config.value_size.start)
+    config.value_size.end = config.value_size.start;
 
+  /* Report set options */
   printf("------------------------------------------------------------------------------ \n");
   printf("                cpp client throughput test               \n");
   printf("------------------------------------------------------------------------------ \n");
-  printf("  Selected operation sequence {put, get, del, log}: ");
+  printf("  Selected operation sequence {put, get, del}: ");
   for(size_t i = 0; i < config.ops.size(); i++) {
     printf(" -op %s", to_str(config.ops[i]).c_str());
   }
-  printf( "\n  Selected host: -host %s\n"
+  printf("\n\n  Selected host: -host %s\n"
             "  Port number used for connection: -port %d\n"
             "  Identity used for connection: -id %d \n"
             "  Secret key used for connection: -pw %s \n"
-
-            "  Generate keys prefix compressible: -prefix {true, false}: %s \n"
+            "  \n"
+            "  Generate keys prefix compressible (to keys_start): -prefix {true, false}: %s \n"
             "  Key range: -keys [_start, _end]: [%d, %d]\n"
             "  Key sizes in byte: -key_size [_start, _end]: [%d, %d]\n"
-            "  Value sizes in KB: -value_size [_start, _end]: [%d, %d]\n"
-
+            "  \n"
             "  Randomize access order every n sequential operations: -ran_seq %d \n"
             "  Randomization Seed: -seed %d \n"
-
+            "  \n"
             "  Queue Depth for requests: -queue_depth %d \n"
             "  Report average performance ever n keys: -report %d \n"
+            "  \n"
+            "  PUT / DELETE ONLY: \n"
             "  Flush connection before reporting {enabled,disabled}: -flush %s \n"
-            "  Put / Delete persistence {write_back,write_through}: -persist %s \n",
+            "  Persistence {write_back,write_through}: -persist %s \n"
+            "  Value sizes in KB: -value_size [_start, _end]: [%d, %d] \n"
+            "  Require key-version: -req_version %s \n"
+            "  Set key-version: -new_version %s \n",
           config.host.c_str(), config.port, config.security_id, config.security_key.c_str(),
 
           config.prefix_compressible ? "true" : "false",
           config.keys.start, config.keys.end,
           config.key_size.start, config.key_size.end,
-          config.value_size.start, config.value_size.end,
 
           config.random_sequence_size, config.random_seed,
 
           config.queue_depth, config.report_keys,
+
           config.flush_on_report ? "enabled" : "disabled",
-          config.persist ==  kinetic::PersistMode::WRITE_BACK ? "write_back" : "write_through"
+          config.persist ==  kinetic::PersistMode::WRITE_BACK ? "write_back" : "write_through",
+          config.value_size.start, config.value_size.end,
+          config.req_version.c_str(), config.new_version.c_str()
           );
   printf("------------------------------------------------------------------------------ \n");
   config.value_size.start*=1024;
@@ -195,33 +213,39 @@ void test(
   auto sync = std::make_shared<kio::CallbackSynchronization>();
 
   for (int i = 0; i < numOperations; i++) {
-    size_engine.seed(config.random_seed);
-    size_engine.discard(*operationKeys);
+    size_engine.seed(*operationKeys);
     size_t request_key_size = key_size_distribution(size_engine);
-    size_t request_value_size = value_size_distribution(size_engine);
 
     std::ostringstream ss;
 
     if(config.prefix_compressible){
-      ss << std::setw(config.key_size.start - 6) << std::setfill('0') << 0;
-      ss << std::setw(6)  << std::setfill('0') <<  *operationKeys;
+      ss << std::setw(config.key_size.start - 7) << std::setfill('0') << 0;
+      ss << std::setw(7)  << std::setfill('0') <<  *operationKeys;
       ss << std::setw(request_key_size - config.key_size.start) << std::setfill('0') << 0;
     } else{
-      ss << std::setw(6)  << std::setfill('0') <<  *operationKeys;
-      ss << std::setw(request_key_size - 6) << std::setfill('0') << 0;
+      ss << std::setw(7)  << std::setfill('0') <<  *operationKeys;
+      ss << std::setw(request_key_size - 7) << std::setfill('0') << 0;
     }
     std::string key = ss.str();
     //printf("key=%ld, key_size=%ld, value_size=%ld, keyname=%s\n",*operationKeys, request_key_size, request_value_size, key.c_str());
     *operationKeys++;
 
-    kinetic::KineticStatus status = kinetic::KineticStatus(kinetic::StatusCode::REMOTE_OTHER_ERROR, "");
     switch (operationType) {
       case OperationType::PUT: {
+        size_t request_value_size = value_size_distribution(size_engine);
         auto cb = std::make_shared<kio::PutCallback>(sync);
-        auto record = std::make_shared<KineticRecord>(std::string(request_value_size, 'X'),
-                             std::to_string((long long int) i), std::to_string((long long int) i),
-                             com::seagate::kinetic::client::proto::Command_Algorithm_SHA1);
-        con->Put(key, "", WriteMode::IGNORE_VERSION, record, cb, config.persist);
+        auto record = std::make_shared<KineticRecord>(
+            std::string(request_value_size, 'X'),
+            config.new_version,
+            std::to_string((long long int) i),
+            com::seagate::kinetic::client::proto::Command_Algorithm_SHA1
+        );
+        if(config.req_version.length()) {
+          con->Put(key, config.req_version, WriteMode::REQUIRE_SAME_VERSION, record, cb, config.persist);
+        }
+        else{
+          con->Put(key, "", WriteMode::IGNORE_VERSION, record, cb, config.persist);
+        }
         value_size += request_value_size;
       }
         break;
@@ -232,7 +256,12 @@ void test(
         break;
       case OperationType::DEL: {
         auto cb = std::make_shared<kio::BasicCallback>(sync);
-        con->Delete(key, "", WriteMode::IGNORE_VERSION, cb, config.persist);
+        if(config.req_version.length()) {
+          con->Delete(key, config.req_version, WriteMode::REQUIRE_SAME_VERSION, cb, config.persist);
+        }
+        else{
+          con->Delete(key, "", WriteMode::IGNORE_VERSION, cb, config.persist);
+        }
       }
         break;
       case OperationType::LOG: {
