@@ -33,6 +33,16 @@ void CallbackSynchronization::wait_until(std::chrono::system_clock::time_point t
   }
 }
 
+void CallbackSynchronization::addRequestSize(size_t size)
+{
+  request_size += size;
+}
+
+size_t CallbackSynchronization::getRequestSize()
+{
+  return request_size;
+}
+
 
 void CallbackSynchronization::run_until(std::unique_ptr <kinetic::ThreadsafeNonblockingKineticConnection>& con,
                                         int max_outstanding)
@@ -106,6 +116,9 @@ GetCallback::~GetCallback()
 
 void GetCallback::Success(const std::string& key, std::unique_ptr<kinetic::KineticRecord> r)
 {
+  if(r && r->value()) {
+    sync->addRequestSize(r->value()->size());
+  }
   record = std::move(r);
   OnResult(KineticStatus(StatusCode::OK, ""));
 }
