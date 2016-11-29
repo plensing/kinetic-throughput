@@ -19,7 +19,7 @@ using namespace kio;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-CallbackSynchronization::CallbackSynchronization() : outstanding(0), cv(), mutex()
+CallbackSynchronization::CallbackSynchronization() : outstanding(0), cv(), mutex(), request_size(0)
 { }
 
 CallbackSynchronization::~CallbackSynchronization()

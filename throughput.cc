@@ -17,7 +17,7 @@ using std::string;
 using namespace std::chrono;
 
 enum class OperationType {
-  PUT, GET, DEL, LOG
+  PUT, GET, DEL, LOG, VERSION
 };
 
 struct Range {
@@ -70,6 +70,7 @@ string to_str(OperationType type){
     case OperationType::PUT: return("PUT");
     case OperationType::DEL: return("DEL");
     case OperationType::LOG: return("LOG");
+    case OperationType::VERSION: return("VERSION");
   }
   return "INVALID";
 }
@@ -133,7 +134,9 @@ void parse(int argc, char** argv, configuration &config)
         config.ops.push_back(OperationType::PUT);
       if(strcmp(argv[i+1],"get")==0)
         config.ops.push_back(OperationType::GET);
-      if(strcmp(argv[i+1],"del")==0)
+      if(strcmp(argv[i+1],"version")==0)
+        config.ops.push_back(OperationType::VERSION);
+      if(strcmp(argv[i+1],"delete")==0)
         config.ops.push_back(OperationType::DEL);
       if(strcmp(argv[i+1],"log")==0)
         config.ops.push_back(OperationType::LOG);
@@ -156,7 +159,7 @@ void parse(int argc, char** argv, configuration &config)
   printf("------------------------------------------------------------------------------ \n");
   printf("                cpp client throughput test               \n");
   printf("------------------------------------------------------------------------------ \n");
-  printf("  Selected operation sequence {put, get, del}: ");
+  printf("  Selected operation sequence {put, get, version, delete}: ");
   for(size_t i = 0; i < config.ops.size(); i++) {
     printf(" -op %s", to_str(config.ops[i]).c_str());
   }
@@ -252,6 +255,11 @@ void test(
       case OperationType::GET: {
         auto cb = std::make_shared<kio::GetCallback>(sync);
         con->Get(key, cb);
+      }
+        break;
+      case OperationType::VERSION: {
+        auto cb = std::make_shared<kio::GetVersionCallback>(sync);
+        con->GetVersion(key, cb);
       }
         break;
       case OperationType::DEL: {
