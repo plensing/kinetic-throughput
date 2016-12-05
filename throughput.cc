@@ -222,12 +222,12 @@ void test(
     std::ostringstream ss;
 
     if(config.prefix_compressible){
-      ss << std::setw(config.key_size.start - 7) << std::setfill('0') << 0;
-      ss << std::setw(7)  << std::setfill('0') <<  *operationKeys;
+      ss << std::setw(config.key_size.start - 9) << std::setfill('0') << 0;
+      ss << std::setw(9)  << std::setfill('0') <<  *operationKeys;
       ss << std::setw(request_key_size - config.key_size.start) << std::setfill('0') << 0;
     } else{
-      ss << std::setw(7)  << std::setfill('0') <<  *operationKeys;
-      ss << std::setw(request_key_size - 7) << std::setfill('0') << 0;
+      ss << std::setw(9)  << std::setfill('0') <<  *operationKeys;
+      ss << std::setw(request_key_size - 9) << std::setfill('0') << 0;
     }
     std::string key = ss.str();
     //printf("key=%ld, key_size=%ld, value_size=%ld, keyname=%s\n",*operationKeys, request_key_size, request_value_size, key.c_str());
